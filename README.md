@@ -6,9 +6,9 @@ These were built and tested for **macOS Monterey 12.7.6**.
 
 ## Utilities
 
-### 1. SunAppearance-Monterey
+### 1. SunAppearance
 
-`SunAppearance-Monterey-v2` replaces macOS's built-in **Appearance → Auto** behavior.
+`SunAppearance` replaces macOS's built-in **Appearance → Auto** behavior.
 
 macOS normally waits until the Mac has been idle before switching between Light and Dark appearance. This utility instead checks the sun's actual position and changes the system appearance without waiting for an idle period.
 
@@ -33,7 +33,7 @@ Night Shift is independent. It may be **Off**, **Sunset to Sunrise**, or set to 
 
 ### 2. Terminal Solar Profiles
 
-`Terminal-Solar-Profiles-v2` is a companion utility that makes Terminal follow the current macOS Light/Dark appearance.
+`Terminal-Solar-Profiles` is a companion utility that makes Terminal follow the current macOS Light/Dark appearance.
 
 It uses these exact Terminal profiles:
 
@@ -56,11 +56,11 @@ It uses these exact Terminal profiles:
 
 ## Recommended installation order
 
-Install **SunAppearance-Monterey-v2 first**, then **Terminal-Solar-Profiles-v2**.
+Install **SunAppearance first**, then **Terminal-Solar-Profiles**.
 
 Extract each ZIP file before running its installer.
 
-## Installing SunAppearance-Monterey
+## Installing SunAppearance
 
 Open Terminal, change to the extracted `SunAppearance` directory, and run:
 
@@ -128,7 +128,7 @@ Solarized Dark ansi
 Solarized Light ansi
 ```
 
-Then change to the extracted `Terminal-Solar-Profiles-v2` directory and run:
+Then change to the extracted `Terminal-Solar-Profiles` directory and run:
 
 ```bash
 ./install.sh
@@ -205,7 +205,7 @@ Use the `uninstall.sh` supplied with the corresponding **v2** package.
 
 ### Remove SunAppearance
 
-From the extracted `SunAppearance-Monterey-v2` directory:
+From the extracted `SunAppearance` directory:
 
 ```bash
 ./uninstall.sh
@@ -221,7 +221,7 @@ Location and Automation permissions can be removed separately in System Preferen
 
 ### Remove Terminal Solar Profiles
 
-From the extracted `Terminal-Solar-Profiles-v2` directory:
+From the extracted `Terminal-Solar-Profiles` directory:
 
 ```bash
 ./uninstall.sh
@@ -303,22 +303,6 @@ Solarized Light ansi
 ```
 
 Check System Preferences → Security & Privacy → Privacy → Automation if the helper no longer has permission to control Terminal.
-
-### Terminal status previously showed `terminal=not_running` while Terminal was open
-
-That was fixed in **Terminal-Solar-Profiles-v2**. Version 2 uses AppleScript's application-running state instead of `pgrep`.
-
-### `launchctl: No such file or directory`
-
-The original SunAppearance package incorrectly referred to `/usr/bin/launchctl`.
-
-**SunAppearance-Monterey-v2** uses the correct Monterey path:
-
-```text
-/bin/launchctl
-```
-
-and uses the per-user `gui` launchd domain.
 
 ---
 
