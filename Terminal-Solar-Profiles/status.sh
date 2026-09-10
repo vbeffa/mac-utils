@@ -3,6 +3,7 @@ set -u
 
 SUPPORT_DIR="$HOME/Library/Application Support/TerminalSolarProfiles"
 AGENT="$HOME/Library/LaunchAgents/com.local.terminalsolarprofiles.plist"
+APPLESCRIPT_ERR="$SUPPORT_DIR/helper.applescript.err.log"
 
 if /usr/bin/defaults read -g AppleInterfaceStyle 2>/dev/null | /usr/bin/grep -q Dark; then
     MODE="dark"
@@ -40,6 +41,12 @@ end tell
 APPLESCRIPT
 else
     echo "terminal=not_running"
+fi
+
+if [[ -s "$APPLESCRIPT_ERR" ]]; then
+    echo
+    echo "helper_error:"
+    /bin/cat "$APPLESCRIPT_ERR"
 fi
 
 if [[ -f "$SUPPORT_DIR/last-run.log" ]]; then
