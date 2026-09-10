@@ -32,6 +32,24 @@ Install
 -------
   ./install.sh
 
+The installer is fail-safe:
+- It stops and removes any existing recurring LaunchAgent before changing files.
+- It preserves the compiled helper app when TerminalSolarProfiles.applescript has
+  not changed, avoiding unnecessary rebuilds that can disturb macOS Automation
+  authorization.
+- It tests the helper before recreating/loading the 30-second LaunchAgent.
+- If the helper test fails, the LaunchAgent remains unloaded and its plist remains
+  absent, so a failed install cannot leave a repeating error loop behind.
+
+If the AppleScript source itself changed, the helper must be rebuilt. macOS may
+ask again whether "Terminal Solar Profiles" may control Terminal. Allow it. If the
+test still fails with an Automation error, enable Terminal Solar Profiles for
+Terminal in:
+
+  System Preferences -> Security & Privacy -> Privacy -> Automation
+
+and run ./install.sh again.
+
 Status
 ------
   "$HOME/Library/Application Support/TerminalSolarProfiles/status.sh"
@@ -48,9 +66,14 @@ proving that its `on run` handler actually executed; this previously allowed a
 scheduled run to be logged as triggered while Terminal remained on the old
 profile.
 
-`last-run.log` now reports "Terminal Solar Profiles helper completed." only after
-the helper process exits successfully. Helper errors are captured in
-`helper.err.log` and included in `last-run.log` when a run fails.
+The helper catches AppleScript/Automation failures and writes the real error to
+`helper.applescript.err.log` instead of showing an AppleScript error dialog every
+30 seconds. The runner treats that marker as a failed run and includes it in
+`last-run.log`.
+
+`last-run.log` reports "Terminal Solar Profiles helper completed." only after a
+successful helper run. Low-level helper stderr is captured separately in
+`helper.err.log`.
 
 Terminal-running detection uses AppleScript rather than `pgrep`, both for normal
 runs and uninstall, avoiding false `terminal=not_running` results seen on some
