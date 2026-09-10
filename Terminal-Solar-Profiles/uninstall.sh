@@ -13,7 +13,8 @@ fi
 
 # Restore the Terminal default/startup profiles captured at installation.
 # Running this script from Terminal means Terminal is already open.
-if [[ -f "$STATE" ]] && /usr/bin/pgrep -x Terminal >/dev/null 2>&1; then
+TERMINAL_RUNNING=$(/usr/bin/osascript -e 'application "Terminal" is running' 2>/dev/null || echo false)
+if [[ -f "$STATE" ]] && [[ "$TERMINAL_RUNNING" == "true" ]]; then
     DEFAULT_PROFILE="$(/usr/bin/sed -n '1p' "$STATE")"
     STARTUP_PROFILE="$(/usr/bin/sed -n '2p' "$STATE")"
 
