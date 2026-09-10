@@ -39,3 +39,19 @@ Status
 Uninstall
 ---------
   ./uninstall.sh
+
+Scheduled-run reliability
+-------------------------
+The LaunchAgent runs the compiled AppleScript helper executable directly rather
+than using `open -gj`. Launch Services can report that an app was opened without
+proving that its `on run` handler actually executed; this previously allowed a
+scheduled run to be logged as triggered while Terminal remained on the old
+profile.
+
+`last-run.log` now reports "Terminal Solar Profiles helper completed." only after
+the helper process exits successfully. Helper errors are captured in
+`helper.err.log` and included in `last-run.log` when a run fails.
+
+Terminal-running detection uses AppleScript rather than `pgrep`, both for normal
+runs and uninstall, avoiding false `terminal=not_running` results seen on some
+Monterey systems.
