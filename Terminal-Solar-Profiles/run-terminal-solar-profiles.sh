@@ -3,7 +3,6 @@ set -u
 
 SUPPORT_DIR="$HOME/Library/Application Support/TerminalSolarProfiles"
 APP="$SUPPORT_DIR/Terminal Solar Profiles.app"
-APPLET="$APP/Contents/MacOS/applet"
 LOG="$SUPPORT_DIR/last-run.log"
 ERRLOG="$SUPPORT_DIR/helper.err.log"
 APPLESCRIPT_ERR="$SUPPORT_DIR/helper.applescript.err.log"
@@ -20,19 +19,22 @@ if [[ "$TERMINAL_RUNNING" != "true" ]]; then
     exit 0
 fi
 
-if [[ ! -x "$APPLET" ]]; then
+if [[ ! -d "$APP" ]]; then
     {
         /bin/date
-        echo "ERROR: helper executable not found: $APPLET"
+        echo "ERROR: helper app not found: $APP"
     } > "$LOG"
     exit 1
 fi
 
-# Run the compiled AppleScript helper executable directly.
+# Launch a fresh instance of the helper through Launch Services.
 #
-# Using `open -gj` can return success without proving that the app's `on run`
-# handler actually executed. Running the applet directly makes each launchd
-# interval execute one fresh helper process.
+# `open -n` forces a new app instance so every launchd interval runs the
+# AppleScript's `on run` handler. `-W` waits for that instance to exit, and `-g`
+# keeps it in the background. Launching the app bundle this way preserves the
+# helper application's Automation/TCC identity; invoking Contents/MacOS/applet
+# directly from launchd can fail with Apple event error -1743 even when the app
+# itself has permission to control Terminal.
 #
 # The AppleScript handles its own errors so scheduled failures do not create
 # repeating GUI dialogs. It writes the real AppleScript error to a marker file,
@@ -40,7 +42,7 @@ fi
 : > "$ERRLOG"
 rm -f "$APPLESCRIPT_ERR"
 
-"$APPLET" 2>"$ERRLOG"
+/usr/bin/open -n -W -g "$APP" 2>"$ERRLOG"
 STATUS=$?
 
 if [[ "$STATUS" -eq 0 && ! -s "$APPLESCRIPT_ERR" ]]; then
@@ -55,7 +57,7 @@ fi
     /bin/date
     echo "ERROR: Terminal Solar Profiles helper failed."
     if [[ "$STATUS" -ne 0 ]]; then
-        echo "Helper exit status: $STATUS"
+        echo "Helper launch status: $STATUS"
     fi
     if [[ -s "$APPLESCRIPT_ERR" ]]; then
         echo

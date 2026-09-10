@@ -60,11 +60,23 @@ Uninstall
 
 Scheduled-run reliability
 -------------------------
-The LaunchAgent runs the compiled AppleScript helper executable directly rather
-than using `open -gj`. Launch Services can report that an app was opened without
-proving that its `on run` handler actually executed; this previously allowed a
-scheduled run to be logged as triggered while Terminal remained on the old
-profile.
+The LaunchAgent starts the helper through Launch Services with:
+
+  open -n -W -g "Terminal Solar Profiles.app"
+
+The flags are important:
+- `-n` forces a fresh application instance, so every scheduled run executes the
+  AppleScript's `on run` handler.
+- `-W` waits for that instance to finish before the runner checks the error marker.
+- `-g` keeps the helper in the background.
+
+An earlier implementation used `open -gj`, which could report success without
+proving that `on run` actually executed. A later attempt invoked the compiled
+`Contents/MacOS/applet` executable directly; when launched by launchd, that could
+lose the app bundle's Automation/TCC identity and fail with Apple event error
+-1743 even though Terminal Solar Profiles.app itself was authorized to control
+Terminal. Launching a fresh app-bundle instance through Launch Services avoids
+both failure modes.
 
 The helper catches AppleScript/Automation failures and writes the real error to
 `helper.applescript.err.log` instead of showing an AppleScript error dialog every
@@ -72,8 +84,8 @@ The helper catches AppleScript/Automation failures and writes the real error to
 `last-run.log`.
 
 `last-run.log` reports "Terminal Solar Profiles helper completed." only after a
-successful helper run. Low-level helper stderr is captured separately in
-`helper.err.log`.
+successful helper run. Low-level Launch Services/helper stderr is captured
+separately in `helper.err.log`.
 
 Terminal-running detection uses AppleScript rather than `pgrep`, both for normal
 runs and uninstall, avoiding false `terminal=not_running` results seen on some

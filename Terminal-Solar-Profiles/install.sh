@@ -83,7 +83,7 @@ echo
 rm -f "$APPLESCRIPT_ERR"
 : > "$INSTALL_STDERR"
 set +e
-"$APPLET" 2>"$INSTALL_STDERR"
+/usr/bin/open -n -W -g "$APP" 2>"$INSTALL_STDERR"
 HELPER_STATUS=$?
 set -e
 
