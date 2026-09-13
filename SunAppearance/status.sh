@@ -20,7 +20,8 @@ fi
 echo "macos_auto_enabled=$(/usr/bin/defaults read -g AppleInterfaceStyleSwitchesAutomatically 2>/dev/null || echo false)"
 
 UID_NUM="$(/usr/bin/id -u)"
-if /bin/launchctl print "gui/$UID_NUM/com.local.sunappearance" >/dev/null 2>&1; then
+AGENT_INFO="$(/bin/launchctl print "gui/$UID_NUM/com.local.sunappearance" 2>&1 || true)"
+if [[ "$AGENT_INFO" == *"gui/$UID_NUM/com.local.sunappearance"* || "$AGENT_INFO" == *"path = $AGENT"* ]]; then
     echo "launch_agent=loaded"
 else
     echo "launch_agent=not_loaded"
