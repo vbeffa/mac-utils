@@ -26,6 +26,8 @@ macOS normally waits until the Mac has been idle before switching between Light 
   - **Dark** when the sun is below it.
 - Corrects the appearance on the next check after sleep/wake.
 - Works when traveling because it uses the Mac's current location and time zone.
+- Launches each scheduled helper run as a fresh application instance through Launch Services, preserving the helper's macOS permission identity while ensuring its AppleScript `on run` handler executes.
+- Preserves the compiled helper during updates when the AppleScript source has not changed, avoiding unnecessary Location/Automation permission churn.
 
 The installer disables macOS's built-in automatic appearance switching because this utility replaces it. System Settings will therefore show either **Light** or **Dark**, not **Auto**.
 
@@ -86,6 +88,8 @@ The installed support files are stored in:
 ```text
 ~/Library/Application Support/SunAppearance/
 ```
+
+On install or update, the helper is tested successfully **before** the recurring LaunchAgent is enabled. If the AppleScript source has not changed, the existing compiled helper app is retained rather than rebuilt.
 
 ### Check SunAppearance status
 
@@ -277,6 +281,8 @@ launch_agent=loaded
 ```
 
 and that `desired_mode` is appropriate for the current time.
+
+If the status timestamp stops advancing even though `launchctl print` shows repeated runs, the helper is not actually executing. The LaunchAgent uses `open -n -W -g` so each interval starts a fresh helper instance through Launch Services.
 
 If the location source says `Core Location`, current-location detection is working. If it uses the fallback, check the Mac's Location Services permissions.
 
