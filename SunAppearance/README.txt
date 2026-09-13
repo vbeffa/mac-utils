@@ -33,6 +33,30 @@ it. The current Light/Dark selection will therefore show as Light or Dark in
 System Preferences. Night Shift can remain set to Sunset to Sunrise; it is
 independent of this scheduler.
 
+Updates preserve the existing compiled "Sun Appearance" helper when
+sun_appearance.applescript has not changed. This avoids unnecessary helper
+rebuilds that can disturb macOS Location/Automation authorization.
+
+Before loading the recurring LaunchAgent, the installer runs the helper once
+through Launch Services and verifies that it produced a successful status file.
+If that test fails, the LaunchAgent remains unloaded.
+
+Scheduled-run reliability
+-------------------------
+The LaunchAgent uses:
+
+  /usr/bin/open -n -W -g "Sun Appearance.app"
+
+Launching the application bundle through Launch Services preserves its macOS
+permission identity. The -n option forces a fresh application instance so the
+AppleScript on-run handler executes on every interval; -W waits for that run to
+finish; and -g keeps the helper in the background.
+
+The older -gj invocation could return success while reusing an already-known
+application instance without executing on run again. In that state launchd
+continued to report successful 60-second runs while status.txt and the cached
+location stopped updating.
+
 Status
 ------
 Run:
@@ -41,6 +65,10 @@ Run:
 
 The status file shows the location source, coordinates, solar elevation,
 desired appearance, and whether the most recent run switched the appearance.
+
+The status command also checks launchd for the installed service. On Monterey,
+it identifies the loaded service from launchctl's returned service information
+rather than relying only on launchctl's exit status.
 
 Removal
 -------
