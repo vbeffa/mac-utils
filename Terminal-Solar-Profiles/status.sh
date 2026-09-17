@@ -22,6 +22,13 @@ else
     echo "launch_agent=not_loaded"
 fi
 
+HELPER_RUNNING=$(/usr/bin/osascript -e 'application "Terminal Solar Profiles" is running' 2>/dev/null || echo false)
+if [[ "$HELPER_RUNNING" == "true" ]]; then
+    echo "helper=running"
+else
+    echo "helper=not_running"
+fi
+
 TERMINAL_RUNNING=$(/usr/bin/osascript -e 'application "Terminal" is running' 2>/dev/null || echo false)
 if [[ "$TERMINAL_RUNNING" == "true" ]]; then
     echo "terminal=running"
