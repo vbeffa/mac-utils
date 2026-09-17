@@ -44,7 +44,7 @@ It uses these exact Terminal profiles:
 
 #### Behavior
 
-- Checks the current macOS appearance every **30 seconds**.
+- Runs as a single stay-open background AppleScript applet and checks the current macOS appearance every **30 seconds** from its idle handler.
 - Does not perform its own sunrise/sunset calculation; it follows the system appearance managed by SunAppearance.
 - Does **not** launch Terminal if Terminal is closed.
 - When Terminal is running, it changes:
@@ -164,6 +164,7 @@ Typical output:
 macOS_mode=dark
 desired_terminal_profile=Solarized Dark ansi
 launch_agent=loaded
+helper=running
 terminal=running
 default_profile=Solarized Dark ansi
 startup_profile=Solarized Dark ansi
@@ -298,8 +299,11 @@ Confirm:
 
 ```text
 launch_agent=loaded
+helper=running
 terminal=running
 ```
+
+The Terminal helper is a stay-open applet: launchd supervises one long-lived background instance instead of launching a fresh AppleScript applet every 30 seconds.
 
 Also verify that Terminal still has profiles named exactly:
 

@@ -17,7 +17,8 @@ sunrise/sunset transitions without duplicating location or astronomy code.
 
 Behavior
 --------
-- Checks every 30 seconds.
+- Runs as one stay-open background AppleScript applet.
+- Checks every 30 seconds from the applet's idle handler.
 - Does not launch Terminal if Terminal is closed.
 - When Terminal is running, updates:
   * every open Terminal tab
@@ -33,13 +34,12 @@ Install
   ./install.sh
 
 The installer is fail-safe:
-- It stops and removes any existing recurring LaunchAgent before changing files.
+- It stops the existing LaunchAgent supervisor and helper before changing files.
 - It preserves the compiled helper app when TerminalSolarProfiles.applescript has
   not changed, avoiding unnecessary rebuilds that can disturb macOS Automation
   authorization.
-- It tests the helper before recreating/loading the 30-second LaunchAgent.
-- If the helper test fails, the LaunchAgent remains unloaded and its plist remains
-  absent, so a failed install cannot leave a repeating error loop behind.
+- It tests the helper's initial profile check before loading the LaunchAgent.
+- If that test fails, both the helper and LaunchAgent remain stopped.
 
 If the AppleScript source itself changed, the helper must be rebuilt. macOS may
 ask again whether "Terminal Solar Profiles" may control Terminal. Allow it. If the
@@ -54,39 +54,46 @@ Status
 ------
   "$HOME/Library/Application Support/TerminalSolarProfiles/status.sh"
 
+The status output includes both:
+  launch_agent=loaded
+  helper=running
+
 Uninstall
 ---------
   ./uninstall.sh
 
-Scheduled-run reliability
--------------------------
-The LaunchAgent starts the helper through Launch Services with:
+Stay-open scheduling
+--------------------
+Terminal Solar Profiles is compiled with:
 
-  open -n -W -g "Terminal Solar Profiles.app"
+  osacompile -s
 
-The flags are important:
-- `-n` forces a fresh application instance, so every scheduled run executes the
-  AppleScript's `on run` handler.
-- `-W` waits for that instance to finish before the runner checks the error marker.
-- `-g` keeps the helper in the background.
+The -s option creates a stay-open applet. The applet runs one profile sync from
+its on-run handler, then its on-idle handler repeats the sync every 30 seconds.
 
-An earlier implementation used `open -gj`, which could report success without
-proving that `on run` actually executed. A later attempt invoked the compiled
-`Contents/MacOS/applet` executable directly; when launched by launchd, that could
-lose the app bundle's Automation/TCC identity and fail with Apple event error
--1743 even though Terminal Solar Profiles.app itself was authorized to control
-Terminal. Launching a fresh app-bundle instance through Launch Services avoids
-both failure modes.
+The LaunchAgent no longer starts a fresh AppleScript applet every 30 seconds.
+Instead it supervises one long-lived helper. The helper is launched through
+Launch Services so macOS retains the app bundle's Automation/TCC identity.
+
+This avoids two earlier failure modes:
+- open -gj could report success without proving that the applet's on-run handler
+  actually executed.
+- open -n -W -g reliably executed a fresh applet, but repeatedly launching an
+  AppleScript applet could expose macOS's Run/Quit startup dialog when the Control
+  key happened to be held at launch, which is especially disruptive during Emacs
+  use.
+
+The stay-open helper performs the recurring work internally, so normal modifier
+key use does not coincide with a new applet launch every 30 seconds.
 
 The helper catches AppleScript/Automation failures and writes the real error to
-`helper.applescript.err.log` instead of showing an AppleScript error dialog every
-30 seconds. The runner treats that marker as a failed run and includes it in
-`last-run.log`.
+helper.applescript.err.log rather than displaying an AppleScript error dialog.
+last-run.log is updated after every check with either a success, a skipped check
+because Terminal is closed, or the captured error.
 
-`last-run.log` reports "Terminal Solar Profiles helper completed." only after a
-successful helper run. Low-level Launch Services/helper stderr is captured
-separately in `helper.err.log`.
+The LaunchAgent's runner stays alive while the helper is running. If the helper
+unexpectedly exits, launchd restarts the supervisor, which relaunches the helper
+through Launch Services.
 
-Terminal-running detection uses AppleScript rather than `pgrep`, both for normal
-runs and uninstall, avoiding false `terminal=not_running` results seen on some
-Monterey systems.
+Terminal-running detection uses AppleScript rather than pgrep, avoiding false
+terminal=not_running results seen on some Monterey systems.

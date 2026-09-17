@@ -5,14 +5,20 @@ SUPPORT_DIR="$HOME/Library/Application Support/TerminalSolarProfiles"
 AGENT="$HOME/Library/LaunchAgents/com.local.terminalsolarprofiles.plist"
 STATE="$SUPPORT_DIR/original-profiles.txt"
 
-# Unload the LaunchAgent.
+# Unload the LaunchAgent supervisor first so it cannot restart the stay-open
+# helper while uninstalling.
 if [[ -f "$AGENT" ]]; then
     (/bin/launchctl bootout "gui/$(id -u)" "$AGENT" >/dev/null 2>&1) || true
     rm -f "$AGENT"
 fi
 
+# Stop the stay-open helper before restoring Terminal settings.
+HELPER_RUNNING=$(/usr/bin/osascript -e 'application "Terminal Solar Profiles" is running' 2>/dev/null || echo false)
+if [[ "$HELPER_RUNNING" == "true" ]]; then
+    /usr/bin/osascript -e 'tell application "Terminal Solar Profiles" to quit' >/dev/null 2>&1 || true
+fi
+
 # Restore the Terminal default/startup profiles captured at installation.
-# Running this script from Terminal means Terminal is already open.
 TERMINAL_RUNNING=$(/usr/bin/osascript -e 'application "Terminal" is running' 2>/dev/null || echo false)
 if [[ -f "$STATE" ]] && [[ "$TERMINAL_RUNNING" == "true" ]]; then
     DEFAULT_PROFILE="$(/usr/bin/sed -n '1p' "$STATE")"
