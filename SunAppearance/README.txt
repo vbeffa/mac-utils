@@ -7,7 +7,8 @@ Switch macOS to Light at the conventional local sunrise and Dark at the
 conventional local sunset without waiting for macOS's one-minute idle period.
 
 The scheduler:
-- checks once per minute;
+- runs as one stay-open background AppleScript applet;
+- checks once per minute from the applet's idle handler;
 - gets the current position from Apple's Core Location framework;
 - refreshes the position every 30 minutes;
 - keeps the last successful location if a refresh temporarily fails;
@@ -37,25 +38,40 @@ Updates preserve the existing compiled "Sun Appearance" helper when
 sun_appearance.applescript has not changed. This avoids unnecessary helper
 rebuilds that can disturb macOS Location/Automation authorization.
 
-Before loading the recurring LaunchAgent, the installer runs the helper once
-through Launch Services and verifies that it produced a successful status file.
-If that test fails, the LaunchAgent remains unloaded.
+Before loading the LaunchAgent, the installer starts the stay-open helper once
+through Launch Services and waits for its initial on-run check to produce a
+successful status file. If that test fails, both the helper and LaunchAgent are
+left stopped.
 
-Scheduled-run reliability
--------------------------
-The LaunchAgent uses:
+Stay-open scheduling
+--------------------
+Sun Appearance is compiled with:
 
-  /usr/bin/open -n -W -g "Sun Appearance.app"
+  osacompile -s
 
-Launching the application bundle through Launch Services preserves its macOS
-permission identity. The -n option forces a fresh application instance so the
-AppleScript on-run handler executes on every interval; -W waits for that run to
-finish; and -g keeps the helper in the background.
+The -s option creates a stay-open applet. The applet performs one appearance
+check from its on-run handler, then its on-idle handler repeats the check every
+60 seconds. Core Location is still refreshed only when the cached location is
+30 minutes old.
 
-The older -gj invocation could return success while reusing an already-known
-application instance without executing on run again. In that state launchd
-continued to report successful 60-second runs while status.txt and the cached
-location stopped updating.
+The LaunchAgent no longer starts a fresh AppleScript applet every minute.
+Instead it supervises one long-lived helper. The helper is launched through
+Launch Services so macOS retains the app bundle's Location/Automation identity.
+
+This avoids two earlier launch problems:
+- open -gj could report success without proving that the applet's on-run handler
+  actually executed, leaving status.txt stale while launchd reported successful
+  runs;
+- open -n -W -g forced a fresh applet instance and fixed that problem, but
+  repeatedly launching an AppleScript applet can expose macOS's Run/Quit startup
+  dialog if the Control key happens to be held at launch.
+
+The stay-open helper performs the recurring work internally, so normal modifier
+key use does not coincide with a new applet launch every minute.
+
+The LaunchAgent's supervisor stays alive while the helper is running. If the
+helper unexpectedly exits, launchd restarts the supervisor, which relaunches the
+helper through Launch Services.
 
 Status
 ------
@@ -66,9 +82,14 @@ Run:
 The status file shows the location source, coordinates, solar elevation,
 desired appearance, and whether the most recent run switched the appearance.
 
-The status command also checks launchd for the installed service. On Monterey,
-it identifies the loaded service from launchctl's returned service information
-rather than relying only on launchctl's exit status.
+The status command also reports both:
+
+  launch_agent=loaded
+  helper=running
+
+On Monterey, the launch-agent check identifies the loaded service from
+launchctl's returned service information rather than relying only on launchctl's
+exit status.
 
 Removal
 -------
@@ -76,14 +97,14 @@ Run:
 
   ./uninstall.sh
 
-This removes the LaunchAgent/helper and restores macOS Appearance=Auto.
+This stops the LaunchAgent supervisor and stay-open helper, removes the installed
+files, and restores macOS Appearance=Auto.
 
 Opera
 -----
 This fixes the macOS transition. It does not work around Opera's separate bug
 where Opera may fail to react to a live system appearance change. As observed,
 restarting Opera makes it read the current system appearance correctly.
-
 
 Monterey launchctl note:
 This build uses /bin/launchctl and the per-user gui domain (bootstrap/bootout).
