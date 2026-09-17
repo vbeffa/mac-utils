@@ -27,6 +27,13 @@ else
     echo "launch_agent=not_loaded"
 fi
 
+HELPER_RUNNING=$(/usr/bin/osascript -e 'application "Sun Appearance" is running' 2>/dev/null || echo false)
+if [[ "$HELPER_RUNNING" == "true" ]]; then
+    echo "helper=running"
+else
+    echo "helper=not_running"
+fi
+
 if [ -f "$BASE/location.txt" ]; then
     echo "cached_location=$(cat "$BASE/location.txt")"
     now=$(/bin/date +%s)
