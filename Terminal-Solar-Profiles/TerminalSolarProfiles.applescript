@@ -1,14 +1,28 @@
-on run
-    set helperErrorFile to (POSIX path of (path to home folder)) & "Library/Application Support/TerminalSolarProfiles/helper.applescript.err.log"
+property checkInterval : 30
 
-    -- Clear any stale error marker from a previous run.
+on run
+    my syncProfile()
+end run
+
+on idle
+    my syncProfile()
+    return checkInterval
+end idle
+
+on syncProfile()
+    set supportDir to (POSIX path of (path to home folder)) & "Library/Application Support/TerminalSolarProfiles"
+    set helperErrorFile to supportDir & "/helper.applescript.err.log"
+    set logFile to supportDir & "/last-run.log"
+
     try
         do shell script "/bin/rm -f " & quoted form of helperErrorFile
     end try
 
     try
-        -- Do not launch Terminal just to change its profile.
-        if application "Terminal" is not running then return
+        if application "Terminal" is not running then
+            my writeLog(logFile, "Terminal is not running; nothing to change.")
+            return
+        end if
 
         set interfaceStyle to ""
         try
@@ -28,12 +42,9 @@ on run
             end if
 
             set targetSettings to settings set profileName
-
-            -- Make future Terminal windows/startups use the matching profile.
             set default settings to targetSettings
             set startup settings to targetSettings
 
-            -- Switch every currently open tab as well.
             repeat with w in windows
                 repeat with t in tabs of w
                     try
@@ -42,15 +53,26 @@ on run
                 end repeat
             end repeat
         end tell
-    on error errMsg number errNum
-        my writeError(helperErrorFile, "AppleScript error " & errNum & ": " & errMsg)
-    end try
-end run
 
-on writeError(errorFile, messageText)
-    try
-        set errorDir to do shell script "/usr/bin/dirname " & quoted form of errorFile
-        do shell script "/bin/mkdir -p " & quoted form of errorDir
-        do shell script "/usr/bin/printf '%s\\n' " & quoted form of messageText & " > " & quoted form of errorFile
+        my writeLog(logFile, "Terminal Solar Profiles helper completed.")
+    on error errMsg number errNum
+        set errorText to "AppleScript error " & errNum & ": " & errMsg
+        my writeText(helperErrorFile, errorText & linefeed)
+        my writeLog(logFile, "ERROR: Terminal Solar Profiles helper failed." & linefeed & linefeed & "AppleScript error:" & linefeed & errorText)
     end try
-end writeError
+end syncProfile
+
+on writeLog(logFile, messageText)
+    try
+        set stamp to do shell script "/bin/date"
+        my writeText(logFile, stamp & linefeed & messageText & linefeed)
+    end try
+end writeLog
+
+on writeText(filePath, textValue)
+    try
+        set parentDir to do shell script "/usr/bin/dirname " & quoted form of filePath
+        do shell script "/bin/mkdir -p " & quoted form of parentDir
+        do shell script "/usr/bin/printf %s " & quoted form of textValue & " > " & quoted form of filePath
+    end try
+end writeText
