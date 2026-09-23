@@ -54,7 +54,7 @@ on checkAppearance_()
         end try
 
         if needLocation then
-            set freshLocation to my getCurrentLocation_(locationTimeout, debugLogPath)
+            set freshLocation to my getCurrentLocation_(locationTimeout, debugLogPath, cachePath)
             if freshLocation is not missing value then
                 set lat to item 1 of freshLocation
                 set lon to item 2 of freshLocation
@@ -142,15 +142,15 @@ on parseLocation_(cacheData)
     return {(item 1 of cleanPieces) as real, (item 2 of cleanPieces) as real}
 end parseLocation_
 
-on getCurrentLocation_(timeoutSeconds, debugLogPath)
+on getCurrentLocation_(timeoutSeconds, debugLogPath, cachePath)
     try
         set manager to current application's CLLocationManager's alloc()'s init()
         manager's setDesiredAccuracy_(1000.0)
         my logLocation_(debugLogPath, "manager_created")
 
-        -- Keep the existing authorization behavior unchanged for this diagnostic
-        -- change. The log records exactly what Monterey reports before a refresh.
-        set authStatus to (current application's CLLocationManager's authorizationStatus()) as integer
+        -- Read authorization from this manager instance. The deprecated class-level
+        -- authorizationStatus() call can report notDetermined incorrectly on Monterey.
+        set authStatus to (manager's authorizationStatus()) as integer
         set authText to my authStatusText_(authStatus)
         my logLocation_(debugLogPath, "authorization_before=" & authText & " code=" & (authStatus as text))
 
@@ -158,7 +158,7 @@ on getCurrentLocation_(timeoutSeconds, debugLogPath)
             my logLocation_(debugLogPath, "requestWhenInUseAuthorization")
             manager's requestWhenInUseAuthorization()
             try
-                set postRequestStatus to (current application's CLLocationManager's authorizationStatus()) as integer
+                set postRequestStatus to (manager's authorizationStatus()) as integer
                 set postRequestText to my authStatusText_(postRequestStatus)
                 my logLocation_(debugLogPath, "authorization_after_request=" & postRequestText & " code=" & (postRequestStatus as text))
             end try
@@ -192,7 +192,7 @@ on getCurrentLocation_(timeoutSeconds, debugLogPath)
 
         if goodLocation is missing value then
             try
-                set finalStatus to (current application's CLLocationManager's authorizationStatus()) as integer
+                set finalStatus to (manager's authorizationStatus()) as integer
                 set finalText to my authStatusText_(finalStatus)
                 my logLocation_(debugLogPath, "location_timeout authorization_after=" & finalText & " code=" & (finalStatus as text))
             on error
@@ -208,28 +208,48 @@ on getCurrentLocation_(timeoutSeconds, debugLogPath)
         end if
 
         try
-            set finalStatus to (current application's CLLocationManager's authorizationStatus()) as integer
+            set finalStatus to (manager's authorizationStatus()) as integer
             set finalText to my authStatusText_(finalStatus)
             my logLocation_(debugLogPath, "refresh_complete authorization_after=" & finalText & " code=" & (finalStatus as text))
         end try
 
         -- CLLocationCoordinate2D is bridged as an NSValue in AppleScriptObjC.
+        set extractedLocation to missing value
         try
             set coordPoint to goodLocation's coordinate's pointValue()
             set lat to (coordPoint's x) as real
             set lon to (coordPoint's y) as real
-            return {lat, lon}
+            set extractedLocation to {lat, lon}
         on error
             -- Fallback for AppleScriptObjC bridge differences on older systems.
             set descText to goodLocation's |description|() as text
             set ltPos to (offset of "<" in descText)
             set commaPos to (offset of "," in descText)
             set gtPos to (offset of ">" in descText)
-            if ltPos = 0 or commaPos = 0 or gtPos = 0 then return missing value
-            set latText to text (ltPos + 1) thru (commaPos - 1) of descText
-            set lonText to text (commaPos + 1) thru (gtPos - 1) of descText
-            return {latText as real, lonText as real}
+            if ltPos is not 0 and commaPos is not 0 and gtPos is not 0 then
+                set latText to text (ltPos + 1) thru (commaPos - 1) of descText
+                set lonText to text (commaPos + 1) thru (gtPos - 1) of descText
+                set extractedLocation to {latText as real, lonText as real}
+            end if
         end try
+
+        if extractedLocation is missing value then
+            my logLocation_(debugLogPath, "coordinate_rejected reason=extraction_failed")
+            return missing value
+        end if
+
+        set lat to item 1 of extractedLocation
+        set lon to item 2 of extractedLocation
+        my logLocation_(debugLogPath, "coordinate_candidate latitude=" & (lat as text) & " longitude=" & (lon as text))
+
+        set validationResult to my validateFreshLocation_(lat, lon, cachePath)
+        if (item 1 of validationResult) is false then
+            my logLocation_(debugLogPath, "coordinate_rejected reason=" & (item 2 of validationResult))
+            return missing value
+        end if
+
+        my logLocation_(debugLogPath, "coordinate_accepted")
+        return {lat, lon}
     on error errText number errNum
         try
             manager's stopUpdatingLocation()
@@ -238,6 +258,41 @@ on getCurrentLocation_(timeoutSeconds, debugLogPath)
         return missing value
     end try
 end getCurrentLocation_
+
+on validateFreshLocation_(lat, lon, cachePath)
+    if lat < -90.0 or lat > 90.0 then return {false, "latitude_out_of_range"}
+    if lon < -180.0 or lon > 180.0 then return {false, "longitude_out_of_range"}
+    if lat is 0.0 and lon is 0.0 then return {false, "zero_zero_coordinate"}
+
+    -- Guard against the partial-zero bridge corruption observed on Monterey:
+    -- one coordinate became exactly 0.0 while the other remained essentially
+    -- identical to the previously cached location.
+    try
+        set cacheData to do shell script "/bin/cat " & quoted form of cachePath
+        set parsedLocation to my parseLocation_(cacheData)
+        set cachedLat to item 1 of parsedLocation
+        set cachedLon to item 2 of parsedLocation
+
+        if lat is 0.0 and cachedLat is not 0.0 then
+            set lonDelta to lon - cachedLon
+            set lonDelta to my absReal_(lonDelta)
+            if lonDelta < 0.01 then return {false, "suspicious_zero_latitude"}
+        end if
+
+        if lon is 0.0 and cachedLon is not 0.0 then
+            set latDelta to lat - cachedLat
+            set latDelta to my absReal_(latDelta)
+            if latDelta < 0.01 then return {false, "suspicious_zero_longitude"}
+        end if
+    end try
+
+    return {true, "ok"}
+end validateFreshLocation_
+
+on absReal_(valueToCheck)
+    if valueToCheck < 0 then return -1 * valueToCheck
+    return valueToCheck
+end absReal_
 
 on authStatusText_(authStatus)
     if authStatus is 0 then return "not_determined"
