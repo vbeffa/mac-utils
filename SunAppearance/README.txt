@@ -107,10 +107,11 @@ On Monterey, the deprecated class-level authorizationStatus() API was observed
 returning notDetermined even while Sun Appearance was already listed and checked
 in Location Services, causing repeated permission prompts.
 
-Fresh coordinates are range-checked before location.txt is replaced. The helper
-also rejects the observed partial-zero corruption pattern in which one coordinate
-is exactly 0.0 while the other remains essentially unchanged from the previous
-cached location. A rejected fix leaves the previous cache intact.
+Fresh coordinates are range-checked before location.txt is replaced. Exact-zero
+latitude or longitude values are treated as suspicious because Monterey produced
+a partial-zero result during testing. Cached locations with an exact-zero
+coordinate are also ignored so an already-corrupted cache cannot continue to
+drive the solar calculation.
 
 On Monterey, the launch-agent check identifies the loaded service from
 launchctl's returned service information rather than relying only on launchctl's
