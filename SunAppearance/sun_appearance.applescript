@@ -151,17 +151,19 @@ on getCurrentLocation_(timeoutSeconds, debugLogPath)
         -- Keep the existing authorization behavior unchanged for this diagnostic
         -- change. The log records exactly what Monterey reports before a refresh.
         set authStatus to (current application's CLLocationManager's authorizationStatus()) as integer
-        my logLocation_(debugLogPath, "authorization_before=" & my authStatusText_(authStatus) & " code=" & (authStatus as text))
+        set authText to my authStatusText_(authStatus)
+        my logLocation_(debugLogPath, "authorization_before=" & authText & " code=" & (authStatus as text))
 
         if authStatus is 0 then
             my logLocation_(debugLogPath, "requestWhenInUseAuthorization")
             manager's requestWhenInUseAuthorization()
             try
                 set postRequestStatus to (current application's CLLocationManager's authorizationStatus()) as integer
-                my logLocation_(debugLogPath, "authorization_after_request=" & my authStatusText_(postRequestStatus) & " code=" & (postRequestStatus as text))
+                set postRequestText to my authStatusText_(postRequestStatus)
+                my logLocation_(debugLogPath, "authorization_after_request=" & postRequestText & " code=" & (postRequestStatus as text))
             end try
         else if authStatus is 1 or authStatus is 2 then
-            my logLocation_(debugLogPath, "refresh_aborted authorization=" & my authStatusText_(authStatus))
+            my logLocation_(debugLogPath, "refresh_aborted authorization=" & authText)
             return missing value
         end if
 
@@ -191,7 +193,8 @@ on getCurrentLocation_(timeoutSeconds, debugLogPath)
         if goodLocation is missing value then
             try
                 set finalStatus to (current application's CLLocationManager's authorizationStatus()) as integer
-                my logLocation_(debugLogPath, "location_timeout authorization_after=" & my authStatusText_(finalStatus) & " code=" & (finalStatus as text))
+                set finalText to my authStatusText_(finalStatus)
+                my logLocation_(debugLogPath, "location_timeout authorization_after=" & finalText & " code=" & (finalStatus as text))
             on error
                 my logLocation_(debugLogPath, "location_timeout")
             end try
@@ -206,7 +209,8 @@ on getCurrentLocation_(timeoutSeconds, debugLogPath)
 
         try
             set finalStatus to (current application's CLLocationManager's authorizationStatus()) as integer
-            my logLocation_(debugLogPath, "refresh_complete authorization_after=" & my authStatusText_(finalStatus) & " code=" & (finalStatus as text))
+            set finalText to my authStatusText_(finalStatus)
+            my logLocation_(debugLogPath, "refresh_complete authorization_after=" & finalText & " code=" & (finalStatus as text))
         end try
 
         -- CLLocationCoordinate2D is bridged as an NSValue in AppleScriptObjC.
