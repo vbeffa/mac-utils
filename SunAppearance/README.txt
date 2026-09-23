@@ -11,6 +11,7 @@ The scheduler:
 - checks once per minute from the applet's idle handler;
 - gets the current position from Apple's Core Location framework;
 - refreshes the position every 30 minutes;
+- records Core Location refresh/authorization diagnostics in location-debug.log;
 - keeps the last successful location if a refresh temporarily fails;
 - falls back to Sedona, Arizona (34.8697, -111.7609) only if no cached location
   is available;
@@ -86,6 +87,18 @@ The status command also reports both:
 
   launch_agent=loaded
   helper=running
+
+When Core Location diagnostic data is available, status.sh also prints the last
+12 lines from:
+
+  ~/Library/Application Support/SunAppearance/location-debug.log
+
+The log is append-only and records only location-refresh events rather than every
+60-second appearance check. Each refresh records the timestamp, Sun Appearance
+process ID, cache expiration, Core Location authorization status, authorization
+request (if any), update start, result/timeout, and errors. This is intended to
+diagnose unexpected repeated Location Services permission dialogs without
+changing the location-management behavior at the same time.
 
 On Monterey, the launch-agent check identifies the loaded service from
 launchctl's returned service information rather than relying only on launchctl's
