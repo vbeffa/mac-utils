@@ -332,7 +332,7 @@ The append-only diagnostic log records refresh timing, the helper PID, authoriza
 
 On macOS, Core Location prompts automatically when a location service starts, so SunAppearance does not call `requestWhenInUseAuthorization()` explicitly. Monterey was observed briefly reporting `notDetermined` for a newly-created `CLLocationManager` even while Sun Appearance was already authorized; explicitly requesting authorization in that transient state caused repeated Location Services prompts.
 
-On Monterey, SunAppearance reads `CLLocationCoordinate2D` from the AppleScriptObjC coordinate record directly. The older `NSValue/pointValue` bridge produced an intermittent `0.0` latitude during testing. Fresh coordinates are range-checked before replacing `location.txt`, and exact-zero coordinates remain guarded as suspicious so that observed corrupted value cannot overwrite a valid cache.
+On Monterey, both the older `NSValue/pointValue` bridge and the direct AppleScriptObjC `CLLocationCoordinate2D` record have produced an intermittent `0.0` latitude during testing. SunAppearance now validates the bridged record first and, when it is suspicious, parses `CLLocation`'s Objective-C description as a compatibility fallback. Fresh coordinates are range-checked before replacing `location.txt`, and exact-zero coordinates remain guarded so the observed corrupted value cannot overwrite a valid cache.
 
 ### Terminal does not switch profiles
 
