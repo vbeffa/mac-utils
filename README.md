@@ -332,7 +332,7 @@ The append-only diagnostic log records refresh timing, the helper PID, authoriza
 
 SunAppearance reads authorization from the active `CLLocationManager` instance. This avoids the deprecated class-level authorization-status API that was observed returning `notDetermined` on Monterey even while Sun Appearance was already authorized, which caused repeated Location Services prompts.
 
-Fresh coordinates are range-checked before replacing `location.txt`. The helper also rejects the observed partial-zero corruption pattern where one coordinate becomes exactly `0.0` while the other remains essentially unchanged from the previous cached location; in that case it preserves the previous cache.
+Fresh coordinates are range-checked before replacing `location.txt`. Exact-zero latitude or longitude values are treated as suspicious because Monterey produced a partial-zero result during testing. Cached locations containing an exact-zero coordinate are ignored, preventing an already-corrupted cache from continuing to drive the solar calculation.
 
 ### Terminal does not switch profiles
 
