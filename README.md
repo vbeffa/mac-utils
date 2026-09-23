@@ -17,7 +17,7 @@ macOS normally waits until the Mac has been idle before switching between Light 
 - Checks the desired appearance every **60 seconds**.
 - Uses **Apple Core Location** to obtain the Mac's current latitude and longitude.
 - Refreshes the location every **30 minutes**.
-- Reads Location Services authorization from the active Core Location manager instance.
+- Lets macOS request Location Services permission automatically when location updates start.
 - Validates fresh coordinates before replacing the cached location.
 - Records Core Location refresh/authorization diagnostics in an append-only local log.
 - Retains the last successful location if Core Location temporarily fails or a fresh coordinate is rejected as suspicious.
@@ -330,9 +330,9 @@ For Core Location permission or refresh problems, `status.sh` includes the most 
 
 The append-only diagnostic log records refresh timing, the helper PID, authorization status, authorization requests, update starts, candidate coordinates, validation outcomes, success/timeouts, and errors.
 
-SunAppearance reads authorization from the active `CLLocationManager` instance. This avoids the deprecated class-level authorization-status API that was observed returning `notDetermined` on Monterey even while Sun Appearance was already authorized, which caused repeated Location Services prompts.
+On macOS, Core Location prompts automatically when a location service starts, so SunAppearance does not call `requestWhenInUseAuthorization()` explicitly. Monterey was observed briefly reporting `notDetermined` for a newly-created `CLLocationManager` even while Sun Appearance was already authorized; explicitly requesting authorization in that transient state caused repeated Location Services prompts.
 
-Fresh coordinates are range-checked before replacing `location.txt`. Exact-zero latitude or longitude values are treated as suspicious because Monterey produced a partial-zero result during testing. Cached locations containing an exact-zero coordinate are ignored, preventing an already-corrupted cache from continuing to drive the solar calculation.
+On Monterey, SunAppearance reads `CLLocationCoordinate2D` from the AppleScriptObjC coordinate record directly. The older `NSValue/pointValue` bridge produced an intermittent `0.0` latitude during testing. Fresh coordinates are range-checked before replacing `location.txt`, and exact-zero coordinates remain guarded as suspicious so that observed corrupted value cannot overwrite a valid cache.
 
 ### Terminal does not switch profiles
 
