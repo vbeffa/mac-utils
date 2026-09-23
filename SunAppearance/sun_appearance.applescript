@@ -248,23 +248,52 @@ on getCurrentLocation_(timeoutSeconds, debugLogPath)
             end try
         end if
 
-        if extractedLocation is missing value then
-            my logLocation_(debugLogPath, "coordinate_rejected reason=extraction_failed")
-            return missing value
+        if extractedLocation is not missing value then
+            set lat to item 1 of extractedLocation
+            set lon to item 2 of extractedLocation
+            my logLocation_(debugLogPath, "coordinate_candidate source=record latitude=" & (lat as text) & " longitude=" & (lon as text))
+
+            set validationResult to my validateFreshLocation_(lat, lon)
+            if (item 1 of validationResult) is true then
+                my logLocation_(debugLogPath, "coordinate_accepted source=record")
+                return {lat, lon}
+            end if
+
+            my logLocation_(debugLogPath, "coordinate_record_rejected reason=" & (item 2 of validationResult))
         end if
 
-        set lat to item 1 of extractedLocation
-        set lon to item 2 of extractedLocation
-        my logLocation_(debugLogPath, "coordinate_candidate latitude=" & (lat as text) & " longitude=" & (lon as text))
+        -- Monterey can bridge CLLocationCoordinate2D with a zeroed latitude even
+        -- though the CLLocation object itself contains the correct coordinate.
+        -- If the bridged record is invalid, parse CLLocation's Objective-C
+        -- description as a compatibility fallback.
+        try
+            set descText to goodLocation's |description|() as text
+            set ltPos to (offset of "<" in descText)
+            set commaPos to (offset of "," in descText)
+            set gtPos to (offset of ">" in descText)
+            if ltPos is not 0 and commaPos is not 0 and gtPos is not 0 then
+                set latText to text (ltPos + 1) thru (commaPos - 1) of descText
+                set lonText to text (commaPos + 1) thru (gtPos - 1) of descText
+                set fallbackLat to latText as real
+                set fallbackLon to lonText as real
+                my logLocation_(debugLogPath, "coordinate_candidate source=description latitude=" & (fallbackLat as text) & " longitude=" & (fallbackLon as text))
 
-        set validationResult to my validateFreshLocation_(lat, lon)
-        if (item 1 of validationResult) is false then
-            my logLocation_(debugLogPath, "coordinate_rejected reason=" & (item 2 of validationResult))
-            return missing value
-        end if
+                set fallbackValidation to my validateFreshLocation_(fallbackLat, fallbackLon)
+                if (item 1 of fallbackValidation) is true then
+                    my logLocation_(debugLogPath, "coordinate_accepted source=description")
+                    return {fallbackLat, fallbackLon}
+                end if
 
-        my logLocation_(debugLogPath, "coordinate_accepted")
-        return {lat, lon}
+                my logLocation_(debugLogPath, "coordinate_description_rejected reason=" & (item 2 of fallbackValidation))
+            else
+                my logLocation_(debugLogPath, "coordinate_description_rejected reason=unrecognized_format")
+            end if
+        on error errText number errNum
+            my logLocation_(debugLogPath, "coordinate_description_error number=" & (errNum as text) & " message=" & errText)
+        end try
+
+        my logLocation_(debugLogPath, "coordinate_rejected reason=no_valid_extraction")
+        return missing value
     on error errText number errNum
         try
             manager's stopUpdatingLocation()
