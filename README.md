@@ -54,6 +54,33 @@ It uses these exact Terminal profiles:
 - Remembers the default and startup profiles that were active before installation so they can be restored during uninstall.
 - Uses AppleScript's application-running check rather than `pgrep`, avoiding false `terminal=not_running` results seen on some Monterey systems.
 
+## Architecture
+
+```mermaid
+flowchart LR
+    subgraph SA["SunAppearance"]
+        SAAgent["launchd<br/>com.local.sunappearance"] --> SARunner["run-sun-appearance.sh"]
+        SARunner --> SAApp["Sun Appearance.app<br/>stay-open AppleScript"]
+        SAApp --> SACheck["Appearance check<br/>every 60 seconds"]
+        SACheck --> Cache{"Location cache<br/>younger than 30 min?"}
+        Cache -->|Yes| Solar["sun_state.js<br/>solar elevation"]
+        Cache -->|No| Core["Apple Core Location"]
+        Core --> LocCache["location.txt"]
+        LocCache --> Solar
+        Solar --> SystemAppearance["macOS Appearance<br/>Light / Dark"]
+    end
+
+    subgraph TP["Terminal Solar Profiles"]
+        TPAgent["launchd<br/>com.local.terminalsolarprofiles"] --> TPRunner["run-terminal-solar-profiles.sh"]
+        TPRunner --> TPApp["Terminal Solar Profiles.app<br/>stay-open AppleScript"]
+        TPApp --> TPCheck["Profile check<br/>every 30 seconds"]
+        TPCheck --> SystemAppearance
+        SystemAppearance --> Terminal["Terminal<br/>default, startup, and open tabs"]
+    end
+```
+
+SunAppearance owns the solar and location logic and sets the system appearance. Terminal Solar Profiles does not calculate sunrise or sunset; it follows the current macOS appearance and maps it to the matching Solarized Terminal profile. Both utilities run as long-lived background helpers supervised by per-user LaunchAgents.
+
 ---
 
 ## Recommended installation order
