@@ -11,8 +11,11 @@ The scheduler:
 - checks once per minute from the applet's idle handler;
 - gets the current position from Apple's Core Location framework;
 - refreshes the position every 30 minutes;
+- reads Location Services authorization from the active CLLocationManager instance;
+- validates fresh coordinates before replacing the location cache;
 - records Core Location refresh/authorization diagnostics in location-debug.log;
-- keeps the last successful location if a refresh temporarily fails;
+- keeps the last successful location if a refresh temporarily fails or a fresh
+  coordinate is rejected as suspicious;
 - falls back to Sedona, Arizona (34.8697, -111.7609) only if no cached location
   is available;
 - uses the standard sunrise/sunset apparent-horizon definition (sun center at
@@ -96,9 +99,18 @@ When Core Location diagnostic data is available, status.sh also prints the last
 The log is append-only and records only location-refresh events rather than every
 60-second appearance check. Each refresh records the timestamp, Sun Appearance
 process ID, cache expiration, Core Location authorization status, authorization
-request (if any), update start, result/timeout, and errors. This is intended to
-diagnose unexpected repeated Location Services permission dialogs without
-changing the location-management behavior at the same time.
+request (if any), update start, candidate coordinates, validation result,
+result/timeout, and errors.
+
+Sun Appearance reads authorization from the active CLLocationManager instance.
+On Monterey, the deprecated class-level authorizationStatus() API was observed
+returning notDetermined even while Sun Appearance was already listed and checked
+in Location Services, causing repeated permission prompts.
+
+Fresh coordinates are range-checked before location.txt is replaced. The helper
+also rejects the observed partial-zero corruption pattern in which one coordinate
+is exactly 0.0 while the other remains essentially unchanged from the previous
+cached location. A rejected fix leaves the previous cache intact.
 
 On Monterey, the launch-agent check identifies the loaded service from
 launchctl's returned service information rather than relying only on launchctl's
