@@ -139,7 +139,13 @@ on parseLocation_(cacheData)
         if (p as text) is not "" then set end of cleanPieces to (p as text)
     end repeat
     if (count of cleanPieces) < 2 then error "Invalid cached location"
-    return {(item 1 of cleanPieces) as real, (item 2 of cleanPieces) as real}
+    set cachedLat to (item 1 of cleanPieces) as real
+    set cachedLon to (item 2 of cleanPieces) as real
+    if cachedLat < -90.0 or cachedLat > 90.0 then error "Cached latitude out of range"
+    if cachedLon < -180.0 or cachedLon > 180.0 then error "Cached longitude out of range"
+    if cachedLat is 0.0 then error "Suspicious zero cached latitude"
+    if cachedLon is 0.0 then error "Suspicious zero cached longitude"
+    return {cachedLat, cachedLon}
 end parseLocation_
 
 on getCurrentLocation_(timeoutSeconds, debugLogPath)
@@ -148,23 +154,20 @@ on getCurrentLocation_(timeoutSeconds, debugLogPath)
         manager's setDesiredAccuracy_(1000.0)
         my logLocation_(debugLogPath, "manager_created")
 
-        -- Keep the existing authorization behavior unchanged for this diagnostic
-        -- change. The log records exactly what Monterey reports before a refresh.
-        set authStatus to (current application's CLLocationManager's authorizationStatus()) as integer
+        -- Read authorization from this manager instance. The deprecated class-level
+        -- authorizationStatus() call can report notDetermined incorrectly on Monterey.
+        set authStatus to (manager's authorizationStatus()) as integer
         set authText to my authStatusText_(authStatus)
         my logLocation_(debugLogPath, "authorization_before=" & authText & " code=" & (authStatus as text))
 
-        if authStatus is 0 then
-            my logLocation_(debugLogPath, "requestWhenInUseAuthorization")
-            manager's requestWhenInUseAuthorization()
-            try
-                set postRequestStatus to (current application's CLLocationManager's authorizationStatus()) as integer
-                set postRequestText to my authStatusText_(postRequestStatus)
-                my logLocation_(debugLogPath, "authorization_after_request=" & postRequestText & " code=" & (postRequestStatus as text))
-            end try
-        else if authStatus is 1 or authStatus is 2 then
+        if authStatus is 1 or authStatus is 2 then
             my logLocation_(debugLogPath, "refresh_aborted authorization=" & authText)
             return missing value
+        else if authStatus is 0 then
+            -- On macOS, Core Location requests permission automatically when a
+            -- location service starts. Explicit requestWhenInUseAuthorization()
+            -- caused repeated prompts on Monterey even for an already-authorized app.
+            my logLocation_(debugLogPath, "authorization_not_determined action=start_location_service")
         end if
 
         my logLocation_(debugLogPath, "startUpdatingLocation")
@@ -192,7 +195,7 @@ on getCurrentLocation_(timeoutSeconds, debugLogPath)
 
         if goodLocation is missing value then
             try
-                set finalStatus to (current application's CLLocationManager's authorizationStatus()) as integer
+                set finalStatus to (manager's authorizationStatus()) as integer
                 set finalText to my authStatusText_(finalStatus)
                 my logLocation_(debugLogPath, "location_timeout authorization_after=" & finalText & " code=" & (finalStatus as text))
             on error
@@ -208,28 +211,89 @@ on getCurrentLocation_(timeoutSeconds, debugLogPath)
         end if
 
         try
-            set finalStatus to (current application's CLLocationManager's authorizationStatus()) as integer
+            set finalStatus to (manager's authorizationStatus()) as integer
             set finalText to my authStatusText_(finalStatus)
             my logLocation_(debugLogPath, "refresh_complete authorization_after=" & finalText & " code=" & (finalStatus as text))
         end try
 
-        -- CLLocationCoordinate2D is bridged as an NSValue in AppleScriptObjC.
+        -- On modern macOS, AppleScriptObjC bridges CLLocationCoordinate2D as
+        -- a record. Reading it as NSValue/pointValue produced intermittent 0.0
+        -- latitude values on Monterey, so prefer the record fields directly.
+        set extractedLocation to missing value
         try
-            set coordPoint to goodLocation's coordinate's pointValue()
-            set lat to (coordPoint's x) as real
-            set lon to (coordPoint's y) as real
-            return {lat, lon}
-        on error
-            -- Fallback for AppleScriptObjC bridge differences on older systems.
+            set coordRecord to goodLocation's coordinate()
+            set lat to (latitude of coordRecord) as real
+            set lon to (longitude of coordRecord) as real
+            set extractedLocation to {lat, lon}
+            my logLocation_(debugLogPath, "coordinate_extraction=record")
+        on error errText number errNum
+            my logLocation_(debugLogPath, "coordinate_record_error number=" & (errNum as text) & " message=" & errText)
+        end try
+
+        if extractedLocation is missing value then
+            -- Fallback for older AppleScriptObjC bridge behavior.
+            try
+                set descText to goodLocation's |description|() as text
+                set ltPos to (offset of "<" in descText)
+                set commaPos to (offset of "," in descText)
+                set gtPos to (offset of ">" in descText)
+                if ltPos is not 0 and commaPos is not 0 and gtPos is not 0 then
+                    set latText to text (ltPos + 1) thru (commaPos - 1) of descText
+                    set lonText to text (commaPos + 1) thru (gtPos - 1) of descText
+                    set extractedLocation to {latText as real, lonText as real}
+                    my logLocation_(debugLogPath, "coordinate_extraction=description")
+                end if
+            on error errText number errNum
+                my logLocation_(debugLogPath, "coordinate_description_error number=" & (errNum as text) & " message=" & errText)
+            end try
+        end if
+
+        if extractedLocation is not missing value then
+            set lat to item 1 of extractedLocation
+            set lon to item 2 of extractedLocation
+            my logLocation_(debugLogPath, "coordinate_candidate source=record latitude=" & (lat as text) & " longitude=" & (lon as text))
+
+            set validationResult to my validateFreshLocation_(lat, lon)
+            if (item 1 of validationResult) is true then
+                my logLocation_(debugLogPath, "coordinate_accepted source=record")
+                return {lat, lon}
+            end if
+
+            my logLocation_(debugLogPath, "coordinate_record_rejected reason=" & (item 2 of validationResult))
+        end if
+
+        -- Monterey can bridge CLLocationCoordinate2D with a zeroed latitude even
+        -- though the CLLocation object itself contains the correct coordinate.
+        -- If the bridged record is invalid, parse CLLocation's Objective-C
+        -- description as a compatibility fallback.
+        try
             set descText to goodLocation's |description|() as text
             set ltPos to (offset of "<" in descText)
             set commaPos to (offset of "," in descText)
             set gtPos to (offset of ">" in descText)
-            if ltPos = 0 or commaPos = 0 or gtPos = 0 then return missing value
-            set latText to text (ltPos + 1) thru (commaPos - 1) of descText
-            set lonText to text (commaPos + 1) thru (gtPos - 1) of descText
-            return {latText as real, lonText as real}
+            if ltPos is not 0 and commaPos is not 0 and gtPos is not 0 then
+                set latText to text (ltPos + 1) thru (commaPos - 1) of descText
+                set lonText to text (commaPos + 1) thru (gtPos - 1) of descText
+                set fallbackLat to latText as real
+                set fallbackLon to lonText as real
+                my logLocation_(debugLogPath, "coordinate_candidate source=description latitude=" & (fallbackLat as text) & " longitude=" & (fallbackLon as text))
+
+                set fallbackValidation to my validateFreshLocation_(fallbackLat, fallbackLon)
+                if (item 1 of fallbackValidation) is true then
+                    my logLocation_(debugLogPath, "coordinate_accepted source=description")
+                    return {fallbackLat, fallbackLon}
+                end if
+
+                my logLocation_(debugLogPath, "coordinate_description_rejected reason=" & (item 2 of fallbackValidation))
+            else
+                my logLocation_(debugLogPath, "coordinate_description_rejected reason=unrecognized_format")
+            end if
+        on error errText number errNum
+            my logLocation_(debugLogPath, "coordinate_description_error number=" & (errNum as text) & " message=" & errText)
         end try
+
+        my logLocation_(debugLogPath, "coordinate_rejected reason=no_valid_extraction")
+        return missing value
     on error errText number errNum
         try
             manager's stopUpdatingLocation()
@@ -238,6 +302,19 @@ on getCurrentLocation_(timeoutSeconds, debugLogPath)
         return missing value
     end try
 end getCurrentLocation_
+
+on validateFreshLocation_(lat, lon)
+    if lat < -90.0 or lat > 90.0 then return {false, "latitude_out_of_range"}
+    if lon < -180.0 or lon > 180.0 then return {false, "longitude_out_of_range"}
+
+    -- Exact-zero coordinates are valid geographically, but in this helper they
+    -- are treated as suspicious because Monterey produced a partial-zero result
+    -- while the other coordinate remained a normal local value.
+    if lat is 0.0 then return {false, "suspicious_zero_latitude"}
+    if lon is 0.0 then return {false, "suspicious_zero_longitude"}
+
+    return {true, "ok"}
+end validateFreshLocation_
 
 on authStatusText_(authStatus)
     if authStatus is 0 then return "not_determined"

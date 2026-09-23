@@ -17,8 +17,10 @@ macOS normally waits until the Mac has been idle before switching between Light 
 - Checks the desired appearance every **60 seconds**.
 - Uses **Apple Core Location** to obtain the Mac's current latitude and longitude.
 - Refreshes the location every **30 minutes**.
+- Lets macOS request Location Services permission automatically when location updates start.
+- Validates fresh coordinates before replacing the cached location.
 - Records Core Location refresh/authorization diagnostics in an append-only local log.
-- Retains the last successful location if Core Location temporarily fails.
+- Retains the last successful location if Core Location temporarily fails or a fresh coordinate is rejected as suspicious.
 - Falls back to **Sedona, Arizona** (`34.8697, -111.7609`) if no location has ever been obtained.
 - Calculates sunrise and sunset locally using the conventional apparent-horizon value of **-0.833°**.
 - Does **not** send location information to a web service.
@@ -67,8 +69,11 @@ flowchart LR
         SACheck --> Cache{"Location cache<br/>younger than 30 min?"}
         Cache -->|Yes| Solar["sun_state.js<br/>solar elevation"]
         Cache -->|No| Core["Apple Core Location"]
-        Core --> LocCache["location.txt"]
+        Core --> Validate["Validate fresh coordinates"]
+        Validate -->|Accepted| LocCache["location.txt"]
+        Validate -->|Rejected| Stale["Keep previous cache"]
         LocCache --> Solar
+        Stale --> Solar
         Solar --> SystemAppearance["macOS Appearance<br/>Light / Dark"]
     end
 
@@ -323,7 +328,11 @@ For Core Location permission or refresh problems, `status.sh` includes the most 
 ~/Library/Application Support/SunAppearance/location-debug.log
 ```
 
-The append-only diagnostic log records refresh timing, the helper PID, authorization status, authorization requests, update starts, success/timeouts, and errors. It intentionally does not change the Core Location authorization behavior, so unexpected repeated permission prompts can be diagnosed from the next occurrence.
+The append-only diagnostic log records refresh timing, the helper PID, authorization status, authorization requests, update starts, candidate coordinates, validation outcomes, success/timeouts, and errors.
+
+On macOS, Core Location prompts automatically when a location service starts, so SunAppearance does not call `requestWhenInUseAuthorization()` explicitly. Monterey was observed briefly reporting `notDetermined` for a newly-created `CLLocationManager` even while Sun Appearance was already authorized; explicitly requesting authorization in that transient state caused repeated Location Services prompts.
+
+On Monterey, both the older `NSValue/pointValue` bridge and the direct AppleScriptObjC `CLLocationCoordinate2D` record have produced an intermittent `0.0` latitude during testing. SunAppearance now validates the bridged record first and, when it is suspicious, parses `CLLocation`'s Objective-C description as a compatibility fallback. Fresh coordinates are range-checked before replacing `location.txt`, and exact-zero coordinates remain guarded so the observed corrupted value cannot overwrite a valid cache.
 
 ### Terminal does not switch profiles
 

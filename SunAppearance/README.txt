@@ -11,8 +11,11 @@ The scheduler:
 - checks once per minute from the applet's idle handler;
 - gets the current position from Apple's Core Location framework;
 - refreshes the position every 30 minutes;
+- lets macOS request Location Services permission automatically when location updates start;
+- validates fresh coordinates before replacing the location cache;
 - records Core Location refresh/authorization diagnostics in location-debug.log;
-- keeps the last successful location if a refresh temporarily fails;
+- keeps the last successful location if a refresh temporarily fails or a fresh
+  coordinate is rejected as suspicious;
 - falls back to Sedona, Arizona (34.8697, -111.7609) only if no cached location
   is available;
 - uses the standard sunrise/sunset apparent-horizon definition (sun center at
@@ -96,9 +99,23 @@ When Core Location diagnostic data is available, status.sh also prints the last
 The log is append-only and records only location-refresh events rather than every
 60-second appearance check. Each refresh records the timestamp, Sun Appearance
 process ID, cache expiration, Core Location authorization status, authorization
-request (if any), update start, result/timeout, and errors. This is intended to
-diagnose unexpected repeated Location Services permission dialogs without
-changing the location-management behavior at the same time.
+request (if any), update start, candidate coordinates, validation result,
+result/timeout, and errors.
+
+On macOS, Core Location requests permission automatically when a location
+service starts. Sun Appearance therefore does not call
+requestWhenInUseAuthorization() explicitly. Monterey was observed reporting
+notDetermined briefly for a newly-created CLLocationManager even while the app
+was already authorized; explicitly requesting authorization in that state caused
+repeated permission dialogs.
+
+On Monterey, both the older NSValue/pointValue bridge and the direct
+AppleScriptObjC CLLocationCoordinate2D record have produced an intermittent
+0.0 latitude during testing. Sun Appearance therefore validates the bridged
+record first and, if it is suspicious, parses CLLocation's Objective-C
+description as a compatibility fallback. Fresh coordinates are range-checked
+before location.txt is replaced, and exact-zero coordinates remain guarded so
+the observed corrupted value cannot overwrite a valid cache.
 
 On Monterey, the launch-agent check identifies the loaded service from
 launchctl's returned service information rather than relying only on launchctl's
