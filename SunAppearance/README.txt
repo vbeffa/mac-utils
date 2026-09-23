@@ -109,11 +109,13 @@ notDetermined briefly for a newly-created CLLocationManager even while the app
 was already authorized; explicitly requesting authorization in that state caused
 repeated permission dialogs.
 
-On Monterey, CLLocationCoordinate2D is read from the AppleScriptObjC coordinate
-record directly. The older NSValue/pointValue bridge produced an intermittent
-0.0 latitude during testing. Fresh coordinates are range-checked before
-location.txt is replaced, and exact-zero coordinates remain guarded as
-suspicious so the observed corrupted value cannot overwrite a valid cache.
+On Monterey, both the older NSValue/pointValue bridge and the direct
+AppleScriptObjC CLLocationCoordinate2D record have produced an intermittent
+0.0 latitude during testing. Sun Appearance therefore validates the bridged
+record first and, if it is suspicious, parses CLLocation's Objective-C
+description as a compatibility fallback. Fresh coordinates are range-checked
+before location.txt is replaced, and exact-zero coordinates remain guarded so
+the observed corrupted value cannot overwrite a valid cache.
 
 On Monterey, the launch-agent check identifies the loaded service from
 launchctl's returned service information rather than relying only on launchctl's
