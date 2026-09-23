@@ -40,3 +40,9 @@ if [ -f "$BASE/location.txt" ]; then
     mtime=$(/usr/bin/stat -f %m "$BASE/location.txt" 2>/dev/null || echo "$now")
     echo "cached_location_age_seconds=$((now-mtime))"
 fi
+
+if [ -f "$BASE/location-debug.log" ]; then
+    echo
+    echo "location_debug_tail:"
+    /usr/bin/tail -n 12 "$BASE/location-debug.log"
+fi
