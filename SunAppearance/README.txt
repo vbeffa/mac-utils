@@ -11,7 +11,7 @@ The scheduler:
 - checks once per minute from the applet's idle handler;
 - gets the current position from Apple's Core Location framework;
 - refreshes the position every 30 minutes;
-- reads Location Services authorization from the active CLLocationManager instance;
+- lets macOS request Location Services permission automatically when location updates start;
 - validates fresh coordinates before replacing the location cache;
 - records Core Location refresh/authorization diagnostics in location-debug.log;
 - keeps the last successful location if a refresh temporarily fails or a fresh
@@ -102,16 +102,18 @@ process ID, cache expiration, Core Location authorization status, authorization
 request (if any), update start, candidate coordinates, validation result,
 result/timeout, and errors.
 
-Sun Appearance reads authorization from the active CLLocationManager instance.
-On Monterey, the deprecated class-level authorizationStatus() API was observed
-returning notDetermined even while Sun Appearance was already listed and checked
-in Location Services, causing repeated permission prompts.
+On macOS, Core Location requests permission automatically when a location
+service starts. Sun Appearance therefore does not call
+requestWhenInUseAuthorization() explicitly. Monterey was observed reporting
+notDetermined briefly for a newly-created CLLocationManager even while the app
+was already authorized; explicitly requesting authorization in that state caused
+repeated permission dialogs.
 
-Fresh coordinates are range-checked before location.txt is replaced. Exact-zero
-latitude or longitude values are treated as suspicious because Monterey produced
-a partial-zero result during testing. Cached locations with an exact-zero
-coordinate are also ignored so an already-corrupted cache cannot continue to
-drive the solar calculation.
+On Monterey, CLLocationCoordinate2D is read from the AppleScriptObjC coordinate
+record directly. The older NSValue/pointValue bridge produced an intermittent
+0.0 latitude during testing. Fresh coordinates are range-checked before
+location.txt is replaced, and exact-zero coordinates remain guarded as
+suspicious so the observed corrupted value cannot overwrite a valid cache.
 
 On Monterey, the launch-agent check identifies the loaded service from
 launchctl's returned service information rather than relying only on launchctl's
