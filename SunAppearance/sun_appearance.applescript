@@ -160,17 +160,14 @@ on getCurrentLocation_(timeoutSeconds, debugLogPath)
         set authText to my authStatusText_(authStatus)
         my logLocation_(debugLogPath, "authorization_before=" & authText & " code=" & (authStatus as text))
 
-        if authStatus is 0 then
-            my logLocation_(debugLogPath, "requestWhenInUseAuthorization")
-            manager's requestWhenInUseAuthorization()
-            try
-                set postRequestStatus to (manager's authorizationStatus()) as integer
-                set postRequestText to my authStatusText_(postRequestStatus)
-                my logLocation_(debugLogPath, "authorization_after_request=" & postRequestText & " code=" & (postRequestStatus as text))
-            end try
-        else if authStatus is 1 or authStatus is 2 then
+        if authStatus is 1 or authStatus is 2 then
             my logLocation_(debugLogPath, "refresh_aborted authorization=" & authText)
             return missing value
+        else if authStatus is 0 then
+            -- On macOS, Core Location requests permission automatically when a
+            -- location service starts. Explicit requestWhenInUseAuthorization()
+            -- caused repeated prompts on Monterey even for an already-authorized app.
+            my logLocation_(debugLogPath, "authorization_not_determined action=start_location_service")
         end if
 
         my logLocation_(debugLogPath, "startUpdatingLocation")
@@ -219,25 +216,37 @@ on getCurrentLocation_(timeoutSeconds, debugLogPath)
             my logLocation_(debugLogPath, "refresh_complete authorization_after=" & finalText & " code=" & (finalStatus as text))
         end try
 
-        -- CLLocationCoordinate2D is bridged as an NSValue in AppleScriptObjC.
+        -- On modern macOS, AppleScriptObjC bridges CLLocationCoordinate2D as
+        -- a record. Reading it as NSValue/pointValue produced intermittent 0.0
+        -- latitude values on Monterey, so prefer the record fields directly.
         set extractedLocation to missing value
         try
-            set coordPoint to goodLocation's coordinate's pointValue()
-            set lat to (coordPoint's x) as real
-            set lon to (coordPoint's y) as real
+            set coordRecord to goodLocation's coordinate()
+            set lat to (latitude of coordRecord) as real
+            set lon to (longitude of coordRecord) as real
             set extractedLocation to {lat, lon}
-        on error
-            -- Fallback for AppleScriptObjC bridge differences on older systems.
-            set descText to goodLocation's |description|() as text
-            set ltPos to (offset of "<" in descText)
-            set commaPos to (offset of "," in descText)
-            set gtPos to (offset of ">" in descText)
-            if ltPos is not 0 and commaPos is not 0 and gtPos is not 0 then
-                set latText to text (ltPos + 1) thru (commaPos - 1) of descText
-                set lonText to text (commaPos + 1) thru (gtPos - 1) of descText
-                set extractedLocation to {latText as real, lonText as real}
-            end if
+            my logLocation_(debugLogPath, "coordinate_extraction=record")
+        on error errText number errNum
+            my logLocation_(debugLogPath, "coordinate_record_error number=" & (errNum as text) & " message=" & errText)
         end try
+
+        if extractedLocation is missing value then
+            -- Fallback for older AppleScriptObjC bridge behavior.
+            try
+                set descText to goodLocation's |description|() as text
+                set ltPos to (offset of "<" in descText)
+                set commaPos to (offset of "," in descText)
+                set gtPos to (offset of ">" in descText)
+                if ltPos is not 0 and commaPos is not 0 and gtPos is not 0 then
+                    set latText to text (ltPos + 1) thru (commaPos - 1) of descText
+                    set lonText to text (commaPos + 1) thru (gtPos - 1) of descText
+                    set extractedLocation to {latText as real, lonText as real}
+                    my logLocation_(debugLogPath, "coordinate_extraction=description")
+                end if
+            on error errText number errNum
+                my logLocation_(debugLogPath, "coordinate_description_error number=" & (errNum as text) & " message=" & errText)
+            end try
+        end if
 
         if extractedLocation is missing value then
             my logLocation_(debugLogPath, "coordinate_rejected reason=extraction_failed")
