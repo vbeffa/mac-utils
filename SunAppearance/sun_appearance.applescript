@@ -22,6 +22,7 @@ on checkAppearance_()
     set homePath to POSIX path of (path to home folder)
     set basePath to homePath & "Library/Application Support/SunAppearance"
     set cachePath to basePath & "/location.txt"
+    set debugLogPath to basePath & "/location-debug.log"
     set solarScript to basePath & "/sun_state.js"
     set statusPath to basePath & "/status.txt"
 
@@ -37,23 +38,29 @@ on checkAppearance_()
         try
             set mtime to (do shell script "/usr/bin/stat -f %m " & quoted form of cachePath) as integer
             set nowEpoch to (do shell script "/bin/date +%s") as integer
-            if (nowEpoch - mtime) < cacheMaxAge then
+            set cacheAge to nowEpoch - mtime
+            if cacheAge < cacheMaxAge then
                 set cacheData to do shell script "/bin/cat " & quoted form of cachePath
                 set parsedLocation to my parseLocation_(cacheData)
                 set lat to item 1 of parsedLocation
                 set lon to item 2 of parsedLocation
                 set locSource to "cached Core Location"
                 set needLocation to false
+            else
+                my logLocation_(debugLogPath, "refresh_due cache_age=" & (cacheAge as text))
             end if
+        on error errText number errNum
+            my logLocation_(debugLogPath, "cache_unavailable error=" & (errNum as text) & " message=" & errText)
         end try
 
         if needLocation then
-            set freshLocation to my getCurrentLocation_(locationTimeout)
+            set freshLocation to my getCurrentLocation_(locationTimeout, debugLogPath)
             if freshLocation is not missing value then
                 set lat to item 1 of freshLocation
                 set lon to item 2 of freshLocation
                 set locSource to "Core Location"
                 do shell script "/usr/bin/printf '%s %s\\n' " & quoted form of (lat as text) & " " & quoted form of (lon as text) & " > " & quoted form of cachePath
+                my logLocation_(debugLogPath, "location_cache_updated")
             else
                 -- If Location Services is temporarily unavailable, retain the last
                 -- successful position. Sedona is used only when no cache exists.
@@ -63,6 +70,9 @@ on checkAppearance_()
                     set lat to item 1 of parsedLocation
                     set lon to item 2 of parsedLocation
                     set locSource to "stale Core Location cache"
+                    my logLocation_(debugLogPath, "fresh_location_unavailable using=stale_cache")
+                on error
+                    my logLocation_(debugLogPath, "fresh_location_unavailable using=sedona_fallback")
                 end try
             end if
         end if
@@ -132,21 +142,36 @@ on parseLocation_(cacheData)
     return {(item 1 of cleanPieces) as real, (item 2 of cleanPieces) as real}
 end parseLocation_
 
-on getCurrentLocation_(timeoutSeconds)
+on getCurrentLocation_(timeoutSeconds, debugLogPath)
     try
         set manager to current application's CLLocationManager's alloc()'s init()
         manager's setDesiredAccuracy_(1000.0)
+        my logLocation_(debugLogPath, "manager_created")
 
+        -- Keep the existing authorization behavior unchanged for this diagnostic
+        -- change. The log records exactly what Monterey reports before a refresh.
         set authStatus to (current application's CLLocationManager's authorizationStatus()) as integer
+        set authText to my authStatusText_(authStatus)
+        my logLocation_(debugLogPath, "authorization_before=" & authText & " code=" & (authStatus as text))
+
         if authStatus is 0 then
+            my logLocation_(debugLogPath, "requestWhenInUseAuthorization")
             manager's requestWhenInUseAuthorization()
+            try
+                set postRequestStatus to (current application's CLLocationManager's authorizationStatus()) as integer
+                set postRequestText to my authStatusText_(postRequestStatus)
+                my logLocation_(debugLogPath, "authorization_after_request=" & postRequestText & " code=" & (postRequestStatus as text))
+            end try
         else if authStatus is 1 or authStatus is 2 then
+            my logLocation_(debugLogPath, "refresh_aborted authorization=" & authText)
             return missing value
         end if
 
+        my logLocation_(debugLogPath, "startUpdatingLocation")
         manager's startUpdatingLocation()
         set deadline to current application's NSDate's dateWithTimeIntervalSinceNow_(timeoutSeconds)
         set goodLocation to missing value
+        set goodAge to missing value
 
         repeat while ((deadline's timeIntervalSinceNow()) as real) > 0
             current application's NSRunLoop's currentRunLoop()'s runUntilDate_(current application's NSDate's dateWithTimeIntervalSinceNow_(0.25))
@@ -156,6 +181,7 @@ on getCurrentLocation_(timeoutSeconds)
                     set ageSeconds to -1 * ((candidate's |timestamp|()'s timeIntervalSinceNow()) as real)
                     if ageSeconds > -60 and ageSeconds < 600 then
                         set goodLocation to candidate
+                        set goodAge to ageSeconds
                         exit repeat
                     end if
                 end try
@@ -163,7 +189,29 @@ on getCurrentLocation_(timeoutSeconds)
         end repeat
 
         manager's stopUpdatingLocation()
-        if goodLocation is missing value then return missing value
+
+        if goodLocation is missing value then
+            try
+                set finalStatus to (current application's CLLocationManager's authorizationStatus()) as integer
+                set finalText to my authStatusText_(finalStatus)
+                my logLocation_(debugLogPath, "location_timeout authorization_after=" & finalText & " code=" & (finalStatus as text))
+            on error
+                my logLocation_(debugLogPath, "location_timeout")
+            end try
+            return missing value
+        end if
+
+        if goodAge is not missing value then
+            my logLocation_(debugLogPath, "location_received age_seconds=" & (goodAge as text))
+        else
+            my logLocation_(debugLogPath, "location_received")
+        end if
+
+        try
+            set finalStatus to (current application's CLLocationManager's authorizationStatus()) as integer
+            set finalText to my authStatusText_(finalStatus)
+            my logLocation_(debugLogPath, "refresh_complete authorization_after=" & finalText & " code=" & (finalStatus as text))
+        end try
 
         -- CLLocationCoordinate2D is bridged as an NSValue in AppleScriptObjC.
         try
@@ -182,10 +230,29 @@ on getCurrentLocation_(timeoutSeconds)
             set lonText to text (commaPos + 1) thru (gtPos - 1) of descText
             return {latText as real, lonText as real}
         end try
-    on error
+    on error errText number errNum
         try
             manager's stopUpdatingLocation()
         end try
+        my logLocation_(debugLogPath, "refresh_error number=" & (errNum as text) & " message=" & errText)
         return missing value
     end try
 end getCurrentLocation_
+
+on authStatusText_(authStatus)
+    if authStatus is 0 then return "not_determined"
+    if authStatus is 1 then return "restricted"
+    if authStatus is 2 then return "denied"
+    if authStatus is 3 then return "authorized_always"
+    if authStatus is 4 then return "authorized_when_in_use"
+    return "unknown"
+end authStatusText_
+
+on logLocation_(logPath, messageText)
+    try
+        set stamp to do shell script "/bin/date '+%Y-%m-%d %H:%M:%S %Z'"
+        set processID to (current application's NSProcessInfo's processInfo()'s processIdentifier()) as integer
+        set logLine to stamp & " pid=" & (processID as text) & " " & messageText
+        do shell script "/usr/bin/printf '%s\\n' " & quoted form of logLine & " >> " & quoted form of logPath
+    end try
+end logLocation_

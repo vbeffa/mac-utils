@@ -17,6 +17,7 @@ macOS normally waits until the Mac has been idle before switching between Light 
 - Checks the desired appearance every **60 seconds**.
 - Uses **Apple Core Location** to obtain the Mac's current latitude and longitude.
 - Refreshes the location every **30 minutes**.
+- Records Core Location refresh/authorization diagnostics in an append-only local log.
 - Retains the last successful location if Core Location temporarily fails.
 - Falls back to **Sedona, Arizona** (`34.8697, -111.7609`) if no location has ever been obtained.
 - Calculates sunrise and sunset locally using the conventional apparent-horizon value of **-0.833°**.
@@ -26,7 +27,8 @@ macOS normally waits until the Mac has been idle before switching between Light 
   - **Dark** when the sun is below it.
 - Corrects the appearance on the next check after sleep/wake.
 - Works when traveling because it uses the Mac's current location and time zone.
-- Launches each scheduled helper run as a fresh application instance through Launch Services, preserving the helper's macOS permission identity while ensuring its AppleScript `on run` handler executes.
+- Runs as a single stay-open background AppleScript applet, with recurring checks performed from its idle handler.
+- Launchd supervises the long-lived helper instead of starting a fresh applet every minute.
 - Preserves the compiled helper during updates when the AppleScript source has not changed, avoiding unnecessary Location/Automation permission churn.
 
 The installer disables macOS's built-in automatic appearance switching because this utility replaces it. System Settings will therefore show either **Light** or **Dark**, not **Auto**.
@@ -136,6 +138,7 @@ result=unchanged
 current_appearance=dark
 macos_auto_enabled=false
 launch_agent=loaded
+helper=running
 ```
 
 `result=unchanged` means the Mac was already in the desired appearance.
@@ -310,9 +313,17 @@ launch_agent=loaded
 
 and that `desired_mode` is appropriate for the current time.
 
-If the status timestamp stops advancing even though `launchctl print` shows repeated runs, the helper is not actually executing. The LaunchAgent uses `open -n -W -g` so each interval starts a fresh helper instance through Launch Services.
+SunAppearance runs as one stay-open helper. If `helper=not_running`, inspect the LaunchAgent and supervisor rather than expecting a new helper process every minute.
 
 If the location source says `Core Location`, current-location detection is working. If it uses the fallback, check the Mac's Location Services permissions.
+
+For Core Location permission or refresh problems, `status.sh` includes the most recent entries from:
+
+```text
+~/Library/Application Support/SunAppearance/location-debug.log
+```
+
+The append-only diagnostic log records refresh timing, the helper PID, authorization status, authorization requests, update starts, success/timeouts, and errors. It intentionally does not change the Core Location authorization behavior, so unexpected repeated permission prompts can be diagnosed from the next occurrence.
 
 ### Terminal does not switch profiles
 
