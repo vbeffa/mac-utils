@@ -54,7 +54,7 @@ on checkAppearance_()
         end try
 
         if needLocation then
-            set freshLocation to my getCurrentLocation_(locationTimeout, debugLogPath, cachePath)
+            set freshLocation to my getCurrentLocation_(locationTimeout, debugLogPath)
             if freshLocation is not missing value then
                 set lat to item 1 of freshLocation
                 set lon to item 2 of freshLocation
@@ -139,10 +139,16 @@ on parseLocation_(cacheData)
         if (p as text) is not "" then set end of cleanPieces to (p as text)
     end repeat
     if (count of cleanPieces) < 2 then error "Invalid cached location"
-    return {(item 1 of cleanPieces) as real, (item 2 of cleanPieces) as real}
+    set cachedLat to (item 1 of cleanPieces) as real
+    set cachedLon to (item 2 of cleanPieces) as real
+    if cachedLat < -90.0 or cachedLat > 90.0 then error "Cached latitude out of range"
+    if cachedLon < -180.0 or cachedLon > 180.0 then error "Cached longitude out of range"
+    if cachedLat is 0.0 then error "Suspicious zero cached latitude"
+    if cachedLon is 0.0 then error "Suspicious zero cached longitude"
+    return {cachedLat, cachedLon}
 end parseLocation_
 
-on getCurrentLocation_(timeoutSeconds, debugLogPath, cachePath)
+on getCurrentLocation_(timeoutSeconds, debugLogPath)
     try
         set manager to current application's CLLocationManager's alloc()'s init()
         manager's setDesiredAccuracy_(1000.0)
@@ -242,7 +248,7 @@ on getCurrentLocation_(timeoutSeconds, debugLogPath, cachePath)
         set lon to item 2 of extractedLocation
         my logLocation_(debugLogPath, "coordinate_candidate latitude=" & (lat as text) & " longitude=" & (lon as text))
 
-        set validationResult to my validateFreshLocation_(lat, lon, cachePath)
+        set validationResult to my validateFreshLocation_(lat, lon)
         if (item 1 of validationResult) is false then
             my logLocation_(debugLogPath, "coordinate_rejected reason=" & (item 2 of validationResult))
             return missing value
@@ -259,40 +265,18 @@ on getCurrentLocation_(timeoutSeconds, debugLogPath, cachePath)
     end try
 end getCurrentLocation_
 
-on validateFreshLocation_(lat, lon, cachePath)
+on validateFreshLocation_(lat, lon)
     if lat < -90.0 or lat > 90.0 then return {false, "latitude_out_of_range"}
     if lon < -180.0 or lon > 180.0 then return {false, "longitude_out_of_range"}
-    if lat is 0.0 and lon is 0.0 then return {false, "zero_zero_coordinate"}
 
-    -- Guard against the partial-zero bridge corruption observed on Monterey:
-    -- one coordinate became exactly 0.0 while the other remained essentially
-    -- identical to the previously cached location.
-    try
-        set cacheData to do shell script "/bin/cat " & quoted form of cachePath
-        set parsedLocation to my parseLocation_(cacheData)
-        set cachedLat to item 1 of parsedLocation
-        set cachedLon to item 2 of parsedLocation
-
-        if lat is 0.0 and cachedLat is not 0.0 then
-            set lonDelta to lon - cachedLon
-            set lonDelta to my absReal_(lonDelta)
-            if lonDelta < 0.01 then return {false, "suspicious_zero_latitude"}
-        end if
-
-        if lon is 0.0 and cachedLon is not 0.0 then
-            set latDelta to lat - cachedLat
-            set latDelta to my absReal_(latDelta)
-            if latDelta < 0.01 then return {false, "suspicious_zero_longitude"}
-        end if
-    end try
+    -- Exact-zero coordinates are valid geographically, but in this helper they
+    -- are treated as suspicious because Monterey produced a partial-zero result
+    -- while the other coordinate remained a normal local value.
+    if lat is 0.0 then return {false, "suspicious_zero_latitude"}
+    if lon is 0.0 then return {false, "suspicious_zero_longitude"}
 
     return {true, "ok"}
 end validateFreshLocation_
-
-on absReal_(valueToCheck)
-    if valueToCheck < 0 then return -1 * valueToCheck
-    return valueToCheck
-end absReal_
 
 on authStatusText_(authStatus)
     if authStatus is 0 then return "not_determined"
