@@ -33,7 +33,7 @@ macOS normally waits until the Mac has been idle before switching between Light 
 - Launchd supervises the long-lived helper instead of starting a fresh applet every minute.
 - Preserves the compiled helper during updates when the AppleScript source has not changed, avoiding unnecessary Location/Automation permission churn.
 
-The installer disables macOS's built-in automatic appearance switching because this utility replaces it. System Settings will therefore show either **Light** or **Dark**, not **Auto**.
+The installer disables macOS's built-in automatic appearance switching because this utility replaces it. System Preferences will therefore show either **Light** or **Dark**, not **Auto**.
 
 Night Shift is independent. It may be **Off**, **Sunset to Sunrise**, or set to any other schedule you prefer.
 
@@ -104,7 +104,7 @@ Open Terminal, change to the extracted `SunAppearance` directory, and run:
 ./install.sh
 ```
 
-On the first run, macOS may ask for permission for **Sun Appearance** to:
+On the first run or after the helper is rebuilt, macOS may ask for permission for **Sun Appearance** to:
 
 1. use Location Services;
 2. control **System Events**.
@@ -141,16 +141,16 @@ solar_elevation_deg=-7.006
 desired_mode=dark
 result=unchanged
 current_appearance=dark
-macos_auto_enabled=false
+macos_auto_enabled=0
 launch_agent=loaded
 helper=running
 ```
 
-`result=unchanged` means the Mac was already in the desired appearance.
+`result=unchanged` means the Mac was already in the desired appearance. On Monterey, `macos_auto_enabled=0` means the built-in automatic appearance setting is disabled.
 
 ### Test SunAppearance
 
-At night, manually select **Light** in System Settings → General → Appearance.
+At night, manually select **Light** in System Preferences → General → Appearance.
 
 Within approximately 60 seconds, SunAppearance should return the Mac to **Dark**, even if you are actively using it.
 
@@ -328,11 +328,13 @@ For Core Location permission or refresh problems, `status.sh` includes the most 
 ~/Library/Application Support/SunAppearance/location-debug.log
 ```
 
-The append-only diagnostic log records refresh timing, the helper PID, authorization status, authorization requests, update starts, candidate coordinates, validation outcomes, success/timeouts, and errors.
+The append-only diagnostic log records refresh timing, the helper PID, authorization status, location-service starts, candidate coordinates, validation outcomes, success/timeouts, and errors.
 
-On macOS, Core Location prompts automatically when a location service starts, so SunAppearance does not call `requestWhenInUseAuthorization()` explicitly. Monterey was observed briefly reporting `notDetermined` for a newly-created `CLLocationManager` even while Sun Appearance was already authorized; explicitly requesting authorization in that transient state caused repeated Location Services prompts.
+On macOS, Core Location prompts automatically when a location service starts, so SunAppearance does not call `requestWhenInUseAuthorization()` explicitly. Monterey was observed briefly reporting `notDetermined` for a newly-created `CLLocationManager` even while Sun Appearance was already authorized; explicitly requesting authorization in that transient state caused repeated Location Services prompts. PR #13 removed that explicit request and eliminated the repeat-prompt behavior seen during normal refreshes.
 
-On Monterey, both the older `NSValue/pointValue` bridge and the direct AppleScriptObjC `CLLocationCoordinate2D` record have produced an intermittent `0.0` latitude during testing. SunAppearance now validates the bridged record first and, when it is suspicious, parses `CLLocation`'s Objective-C description as a compatibility fallback. Fresh coordinates are range-checked before replacing `location.txt`, and exact-zero coordinates remain guarded so the observed corrupted value cannot overwrite a valid cache.
+A separate Monterey issue remains under investigation: an already-authorized, continuously running helper has been observed showing a Location Services dialog after sleep/unlock even though both the helper and `locationd` reported it as authorized and the running binary's CDHash was already present in Core Location's authorization record. This is tracked in [issue #16](https://github.com/vbeffa/mac-utils/issues/16). A later prompt therefore does not necessarily mean the helper was rebuilt, restarted, or lost its stored authorization.
+
+On Monterey, both the older `NSValue/pointValue` bridge and the direct AppleScriptObjC `CLLocationCoordinate2D` record have produced an intermittent `0.0` latitude during testing. SunAppearance validates the bridged record first and, when it is suspicious, parses `CLLocation`'s Objective-C description as a compatibility fallback. The description can contain the same invalid zero latitude, so fresh coordinates are range-checked before replacing `location.txt`; a rejected refresh keeps the previous valid cache. [Issue #15](https://github.com/vbeffa/mac-utils/issues/15) tracks an improvement to keep polling for another valid candidate until the existing timeout instead of immediately falling back to the stale cache.
 
 ### Terminal does not switch profiles
 
