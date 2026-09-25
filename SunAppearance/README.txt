@@ -30,8 +30,8 @@ Installation
 
    ./install.sh
 
-On first run, macOS may ask for Location Services and Automation/System Events
-permission for "Sun Appearance". Allow both.
+On first run or after the helper is rebuilt, macOS may ask for Location Services
+and Automation/System Events permission for "Sun Appearance". Allow both.
 
 The installer disables macOS Appearance=Auto because this scheduler replaces
 it. The current Light/Dark selection will therefore show as Light or Dark in
@@ -98,24 +98,33 @@ When Core Location diagnostic data is available, status.sh also prints the last
 
 The log is append-only and records only location-refresh events rather than every
 60-second appearance check. Each refresh records the timestamp, Sun Appearance
-process ID, cache expiration, Core Location authorization status, authorization
-request (if any), update start, candidate coordinates, validation result,
-result/timeout, and errors.
+process ID, cache expiration, Core Location authorization status, location-service
+start, candidate coordinates, validation result, result/timeout, and errors.
 
 On macOS, Core Location requests permission automatically when a location
 service starts. Sun Appearance therefore does not call
 requestWhenInUseAuthorization() explicitly. Monterey was observed reporting
 notDetermined briefly for a newly-created CLLocationManager even while the app
 was already authorized; explicitly requesting authorization in that state caused
-repeated permission dialogs.
+repeated permission dialogs. PR #13 removed that explicit request and eliminated
+the repeat-prompt behavior seen during normal refreshes.
+
+A separate Monterey issue remains under investigation: an already-authorized,
+continuously running helper has been observed showing a Location Services dialog
+after sleep/unlock even though the helper and locationd reported it as authorized
+and the running binary's CDHash was already present in Core Location's authorization
+record. This is tracked in GitHub issue #16. A later prompt therefore does not
+necessarily mean the helper was rebuilt, restarted, or lost its stored authorization.
 
 On Monterey, both the older NSValue/pointValue bridge and the direct
 AppleScriptObjC CLLocationCoordinate2D record have produced an intermittent
-0.0 latitude during testing. Sun Appearance therefore validates the bridged
-record first and, if it is suspicious, parses CLLocation's Objective-C
-description as a compatibility fallback. Fresh coordinates are range-checked
-before location.txt is replaced, and exact-zero coordinates remain guarded so
-the observed corrupted value cannot overwrite a valid cache.
+0.0 latitude during testing. Sun Appearance validates the bridged record first
+and, if it is suspicious, parses CLLocation's Objective-C description as a
+compatibility fallback. The description can contain the same invalid zero
+latitude, so fresh coordinates are range-checked before location.txt is replaced;
+a rejected refresh keeps the previous valid cache. GitHub issue #15 tracks an
+improvement to keep polling for another valid candidate until the existing
+timeout instead of immediately falling back to the stale cache.
 
 On Monterey, the launch-agent check identifies the loaded service from
 launchctl's returned service information rather than relying only on launchctl's
